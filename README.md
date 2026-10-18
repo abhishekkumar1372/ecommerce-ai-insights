@@ -17,7 +17,7 @@ flowchart LR
     B -->|dbt staging<br/>type, clean, dedupe| C[(staging views)]
     C -->|dbt marts| D[(star schema<br/>facts + dims)]
     D --> E[Power BI]
-    D --> F[AI service<br/>Claude + pgvector]
+    D --> F[AI service<br/>Gemini or Claude + pgvector]
     F --> G[Insights, Q&A,<br/>anomaly explanations]
 ```
 
@@ -75,24 +75,26 @@ pipeline runs in CI and without a Kaggle account. Real analysis and screenshots 
 
 ## GenAI layer
 
-The AI never reads raw tables and is never trusted on numbers. Three features, all built on Claude
-(`claude-opus-5-5`, structured outputs, server-side refusal fallback):
+The AI never reads raw tables and is never trusted on numbers. The model is swappable: **Google Gemini**
+(`gemini-2.5-flash`, free tier) or **Claude** (`claude-opus-5-5`), both with JSON-schema structured output.
+Set `GEMINI_API_KEY` or `ANTHROPIC_API_KEY`; `LLM_PROVIDER` forces one. Guardrails and logging are identical
+for both. Three features:
 
 | Feature | How it works | Guardrail |
 |---|---|---|
-| **Executive summary** (`make summary`) | Fixed KPI queries become *facts*, each with its source SQL. Claude writes wins, risks and 3 actions, citing fact ids. | Every number in the text must match a cited fact (after rounding and unit handling). On failure the errors go back to Claude once; the result and the check are stored in `ai.ai_insights`. |
-| **Ask your data** (text-to-SQL) | The question retrieves table docs, metric definitions and worked examples from **pgvector**; Claude writes SQL; the result is explained in plain English. | `sqlglot` allows one `SELECT` on `marts`/`kpi` only and caps rows. It runs as role `ai_readonly` (SELECT-only, 10s timeout, read-only transaction). Errors are fed back for up to 2 retries. Answer numbers are checked against the result rows. |
-| **Anomaly explainer** (`make anomalies`) | Days more than 3σ from their 28-day baseline are flagged in SQL, then drilled down by category and state. Claude explains the drivers. | Same fact-check; the cause is labelled a hypothesis. On the sample data it finds the planted Black Friday spike. |
+| **Executive summary** (`make summary`) | Fixed KPI queries become *facts*, each with its source SQL. The model writes wins, risks and 3 actions, citing fact ids. | Every number in the text must match a cited fact (after rounding and unit handling). On failure the errors go back to the model once; the result and the check are stored in `ai.ai_insights`. |
+| **Ask your data** (text-to-SQL) | The question retrieves table docs, metric definitions and worked examples from **pgvector**; the model writes SQL; the result is explained in plain English. | `sqlglot` allows one `SELECT` on `marts`/`kpi` only and caps rows. It runs as role `ai_readonly` (SELECT-only, 10s timeout, read-only transaction). Errors are fed back for up to 2 retries. Answer numbers are checked against the result rows. |
+| **Anomaly explainer** (`make anomalies`) | Days more than 3σ from their 28-day baseline are flagged in SQL, then drilled down by category and state. The model explains the drivers. | Same fact-check; the cause is labelled a hypothesis. On the sample data it finds the planted Black Friday spike. |
 
 ```mermaid
 flowchart LR
     Q[Question] --> R[pgvector retrieval<br/>schema, metrics, examples]
-    R --> L1[Claude: write SQL]
+    R --> L1[LLM: write SQL]
     L1 --> G{sqlglot guard}
     G -- rejected --> L1
     G --> X[(run as ai_readonly)]
     X -- error --> L1
-    X --> L2[Claude: explain rows]
+    X --> L2[LLM: explain rows]
     L2 --> F{numbers match rows?}
     F --> A[Answer + SQL + chart]
 ```
@@ -102,7 +104,7 @@ flowchart LR
 measures how often summaries pass the fact-check first time. The test suite runs the whole AI pipeline with a
 fake model, so CI needs no API key.
 
-**Run it:** `export ANTHROPIC_API_KEY=...`, then `make app` (Streamlit on :8501) or `make api` (FastAPI on :8000,
+**Run it:** `export GEMINI_API_KEY=...` (free key from https://aistudio.google.com/apikey), then `make app` (Streamlit on :8501) or `make api` (FastAPI on :8000,
 docs at `/docs`), or `docker compose up` for everything.
 
 | Endpoint | Purpose |

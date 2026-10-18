@@ -25,10 +25,10 @@ pipeline:    ## Sample data if none present, then ingest + transform + AI setup
 ai-setup:    ## Create AI tables and index the retrieval knowledge base
 	python -m ecom.ai.setup
 
-summary:     ## Generate a fact-checked executive summary (needs ANTHROPIC_API_KEY)
+summary:     ## Generate a fact-checked executive summary (needs GEMINI_API_KEY or ANTHROPIC_API_KEY)
 	python -m ecom.ai.insights
 
-anomalies:   ## List anomalous days and explain the top 3 (needs ANTHROPIC_API_KEY)
+anomalies:   ## List anomalous days and explain the top 3 (needs GEMINI_API_KEY or ANTHROPIC_API_KEY)
 	python -m ecom.ai.anomalies --explain 3
 
 api:         ## REST API on :8000
@@ -37,7 +37,7 @@ api:         ## REST API on :8000
 app:         ## Streamlit app on :8501
 	streamlit run app/streamlit_app.py
 
-evals:       ## Text-to-SQL accuracy + summary fact-check pass rate (needs ANTHROPIC_API_KEY)
+evals:       ## Text-to-SQL accuracy + summary fact-check pass rate (needs GEMINI_API_KEY or ANTHROPIC_API_KEY)
 	python -m ecom.ai.evals
 
 test:        ## Python tests

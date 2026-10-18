@@ -42,3 +42,65 @@ def test_request_uses_structured_output_and_fallback():
 def test_refusal_raises():
     with pytest.raises(LLMRefusal):
         ClaudeLLM(client=_client({}, stop_reason="refusal")).structured("t", "s", "q", SQLDraft)
+
+
+class _Resp:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def read(self):
+        return json.dumps(self.payload).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _gemini(seen: dict, finish: str = "STOP"):
+    def opener(request, timeout):
+        seen["url"] = request.full_url
+        seen["key"] = request.get_header("X-goog-api-key")
+        seen["body"] = json.loads(request.data)
+        text = json.dumps({"reasoning": "r", "sql": "select 1", "chart": "number"})
+        return _Resp({"candidates": [{"content": {"parts": [{"text": text}]}, "finishReason": finish}],
+                      "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5}})
+    return llm_mod.GeminiLLM(api_key="k", opener=opener)
+
+
+def test_gemini_request_uses_json_schema_output():
+    seen: dict = {}
+    out = _gemini(seen).structured("t", "system", "question", SQLDraft)
+    assert out.sql == "select 1"
+    assert "gemini-2.5-flash:generateContent" in seen["url"] and seen["key"] == "k"
+    cfg = seen["body"]["generationConfig"]
+    assert cfg["responseMimeType"] == "application/json"
+    assert "$ref" not in json.dumps(cfg["responseJsonSchema"])
+    assert seen["body"]["systemInstruction"]["parts"][0]["text"] == "system"
+
+
+def test_gemini_safety_block_raises_refusal():
+    with pytest.raises(LLMRefusal):
+        _gemini({}, finish="SAFETY").structured("t", "s", "q", SQLDraft)
+
+
+def test_nested_schema_refs_are_inlined():
+    from ecom.ai.insights import Summary
+    schema = llm_mod._inline_refs(llm_mod._strict_schema(Summary))
+    assert "$ref" not in json.dumps(schema) and "$defs" not in schema
+    assert schema["properties"]["wins"]["items"]["additionalProperties"] is False
+
+
+@pytest.mark.parametrize("env,expected", [
+    ({"GEMINI_API_KEY": "g"}, "gemini"),
+    ({"ANTHROPIC_API_KEY": "a", "GEMINI_API_KEY": "g"}, "claude"),
+    ({"ANTHROPIC_API_KEY": "a", "GEMINI_API_KEY": "g", "LLM_PROVIDER": "gemini"}, "gemini"),
+    ({}, None),
+])
+def test_provider_selection(monkeypatch, env, expected):
+    for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "GEMINI_API_KEY", "LLM_PROVIDER"):
+        monkeypatch.delenv(k, raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    assert llm_mod.provider() == expected
