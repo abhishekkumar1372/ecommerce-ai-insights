@@ -1,0 +1,40 @@
+version: 2
+models:
+  - name: kpi_monthly_sales
+    description: Monthly revenue, orders, AOV, estimated profit, MoM/YoY growth, moving average and running total.
+    columns:
+      - name: month
+        tests: [unique, not_null]
+  - name: kpi_category_pareto
+    description: Revenue by category with rank, share and the cumulative Pareto curve.
+    columns:
+      - name: category
+        tests: [unique, not_null]
+      - name: cumulative_share
+        tests: [not_null]
+  - name: kpi_top_products
+    description: Top 5 products by revenue within each category.
+    tests:
+      - dbt_utils_unique_combination: {columns: [category, product_id]}
+  - name: kpi_rfm_segments
+    description: One row per real customer with R, F, M scores (1-5) and a named segment.
+    columns:
+      - name: customer_unique_id
+        tests: [unique, not_null]
+      - name: segment
+        tests:
+          - accepted_values:
+              values: [Champions, Loyal, New / Promising, At Risk (high value), Lost, Needs Attention]
+  - name: kpi_cohort_retention
+    description: Share of each first-purchase cohort still buying N months later.
+    tests:
+      - dbt_utils_unique_combination: {columns: [cohort_month, months_since_first]}
+  - name: kpi_delivery_impact
+    description: Delivery speed, lateness and review scores by customer state.
+    columns:
+      - name: state
+        tests: [unique, not_null]
+  - name: kpi_seller_scorecard
+    columns:
+      - name: seller_id
+        tests: [unique, not_null]

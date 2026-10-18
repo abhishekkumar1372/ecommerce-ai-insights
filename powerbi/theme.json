@@ -1,0 +1,19 @@
+{
+  "name": "Ecommerce Insights",
+  "dataColors": ["#2F6FEB", "#14A38B", "#F2A33A", "#D9534F", "#7A5AF8", "#5B6B7F", "#E06C9F", "#3FB4D9"],
+  "background": "#FFFFFF",
+  "foreground": "#1F2937",
+  "tableAccent": "#2F6FEB",
+  "good": "#14A38B",
+  "neutral": "#F2A33A",
+  "bad": "#D9534F",
+  "textClasses": {
+    "title": {"fontFace": "Segoe UI Semibold", "fontSize": 14, "color": "#1F2937"},
+    "label": {"fontFace": "Segoe UI", "fontSize": 10, "color": "#5B6B7F"},
+    "callout": {"fontFace": "Segoe UI Semibold", "fontSize": 26, "color": "#1F2937"}
+  },
+  "visualStyles": {
+    "*": {"*": {"background": [{"color": {"solid": {"color": "#FFFFFF"}}, "transparency": 0}],
+                 "border": [{"show": true, "color": {"solid": {"color": "#E5E7EB"}}, "radius": 8}]}}
+  }
+}

@@ -1,0 +1,77 @@
+// ===== Core measures (create in a "_Measures" table) =====
+// Tables: fct_orders, fct_order_items, dim_date, dim_customer, dim_product, dim_seller (schema marts)
+//         kpi_rfm_segments, kpi_cohort_retention, kpi_category_pareto (schema kpi)
+
+Revenue = SUM ( fct_order_items[revenue] )
+
+Orders =
+CALCULATE (
+    DISTINCTCOUNT ( fct_orders[order_id] ),
+    NOT fct_orders[order_status] IN { "canceled", "unavailable" }
+)
+
+Customers = DISTINCTCOUNT ( fct_orders[customer_unique_id] )
+
+Avg Order Value = DIVIDE ( [Revenue], [Orders] )
+
+Est Gross Profit = SUM ( fct_order_items[est_gross_profit] )
+
+Est Margin % = DIVIDE ( [Est Gross Profit], [Revenue] )
+
+Avg Review Score = AVERAGE ( fct_orders[review_score] )
+
+Late Delivery % =
+DIVIDE (
+    CALCULATE ( COUNTROWS ( fct_orders ), fct_orders[is_late] = TRUE () ),
+    CALCULATE ( COUNTROWS ( fct_orders ), NOT ISBLANK ( fct_orders[is_late] ) )
+)
+
+// ===== Time intelligence (needs dim_date marked as Date table on date_day) =====
+
+Revenue PM = CALCULATE ( [Revenue], DATEADD ( dim_date[date_day], -1, MONTH ) )
+
+Revenue MoM % = DIVIDE ( [Revenue] - [Revenue PM], [Revenue PM] )
+
+Revenue PY = CALCULATE ( [Revenue], SAMEPERIODLASTYEAR ( dim_date[date_day] ) )
+
+Revenue YoY % = DIVIDE ( [Revenue] - [Revenue PY], [Revenue PY] )
+
+Revenue YTD = TOTALYTD ( [Revenue], dim_date[date_day] )
+
+Revenue 3M Moving Avg =
+DIVIDE (
+    CALCULATE ( [Revenue], DATESINPERIOD ( dim_date[date_day], MAX ( dim_date[date_day] ), -3, MONTH ) ),
+    3
+)
+
+// ===== Ranking and Pareto =====
+
+Category Rank =
+RANKX ( ALL ( dim_product[category] ), [Revenue], , DESC, DENSE )
+
+Cumulative Revenue % (Category) =
+VAR CurrentRevenue = [Revenue]
+VAR Cumulative =
+    SUMX (
+        FILTER ( ALL ( dim_product[category] ), [Revenue] >= CurrentRevenue ),
+        [Revenue]
+    )
+RETURN DIVIDE ( Cumulative, CALCULATE ( [Revenue], ALL ( dim_product[category] ) ) )
+
+// ===== Customers =====
+
+Repeat Customer % =
+VAR Repeaters =
+    COUNTROWS ( FILTER ( VALUES ( fct_orders[customer_unique_id] ),
+                         CALCULATE ( DISTINCTCOUNT ( fct_orders[order_id] ) ) > 1 ) )
+RETURN DIVIDE ( Repeaters, [Customers] )
+
+Segment Customers = DISTINCTCOUNT ( kpi_rfm_segments[customer_unique_id] )
+
+Segment Revenue = SUM ( kpi_rfm_segments[monetary] )
+
+// ===== Dynamic titles =====
+
+Exec Title =
+"Revenue " & FORMAT ( [Revenue], "R$ #,0" ) & "  ·  " &
+FORMAT ( [Revenue MoM %], "+0.0%;-0.0%" ) & " vs last month"
