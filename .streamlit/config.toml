@@ -1,0 +1,11 @@
+# Same palette as powerbi/theme.json so the app and the dashboard look like one product
+[theme]
+base = "light"
+primaryColor = "#2F6FEB"
+backgroundColor = "#F6F8FB"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1F2937"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"

@@ -7,6 +7,8 @@ An end-to-end analytics platform on the [Olist Brazilian e-commerce dataset](htt
 with **dbt**, analyzed with SQL, visualized in **Power BI**, and explained by a **GenAI layer** whose every claim is
 checked against the database.
 
+![Streamlit app overview](docs/app-overview.png)
+
 > Status: data foundation, SQL KPIs + Power BI kit, and the GenAI layer are done. Production polish follows.
 
 ## Architecture
