@@ -30,6 +30,7 @@ jobs:
         run: psql -h localhost -U postgres -d ecommerce -f db/init/01_init.sql
         env: {PGPASSWORD: postgres}
       - run: make lint
-      - run: make test
-      - name: Generate sample data, ingest, build and test dbt models
+      - name: Generate sample data, ingest, build and test dbt models, set up AI tables
         run: make pipeline
+      - name: Unit and integration tests (AI pipeline runs with a fake LLM)
+        run: make test

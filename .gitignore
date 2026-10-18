@@ -10,3 +10,4 @@ dbt/dbt_packages/
 logs/
 .pytest_cache/
 dbt/.user.yml
+evals/last_report.json

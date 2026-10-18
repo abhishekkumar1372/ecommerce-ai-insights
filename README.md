@@ -7,7 +7,7 @@ An end-to-end analytics platform on the [Olist Brazilian e-commerce dataset](htt
 with **dbt**, analyzed with SQL, visualized in **Power BI**, and explained by a **GenAI layer** whose every claim is
 checked against the database.
 
-> Status: **Milestone 1, data foundation** is done. KPI SQL + Power BI, the GenAI layer and production polish follow.
+> Status: data foundation, SQL KPIs + Power BI kit, and the GenAI layer are done. Production polish follows.
 
 ## Architecture
 
@@ -73,17 +73,60 @@ revenue in `fct_orders` reconciles exactly with `fct_order_items`, and payments 
 (duplicates, missing delivery dates, untranslated categories, outliers, a Black Friday spike), so the whole
 pipeline runs in CI and without a Kaggle account. Real analysis and screenshots use the real dataset.
 
+## GenAI layer
+
+The AI never reads raw tables and is never trusted on numbers. Three features, all built on Claude
+(`claude-opus-5-5`, structured outputs, server-side refusal fallback):
+
+| Feature | How it works | Guardrail |
+|---|---|---|
+| **Executive summary** (`make summary`) | Fixed KPI queries become *facts*, each with its source SQL. Claude writes wins, risks and 3 actions, citing fact ids. | Every number in the text must match a cited fact (after rounding and unit handling). On failure the errors go back to Claude once; the result and the check are stored in `ai.ai_insights`. |
+| **Ask your data** (text-to-SQL) | The question retrieves table docs, metric definitions and worked examples from **pgvector**; Claude writes SQL; the result is explained in plain English. | `sqlglot` allows one `SELECT` on `marts`/`kpi` only and caps rows. It runs as role `ai_readonly` (SELECT-only, 10s timeout, read-only transaction). Errors are fed back for up to 2 retries. Answer numbers are checked against the result rows. |
+| **Anomaly explainer** (`make anomalies`) | Days more than 3σ from their 28-day baseline are flagged in SQL, then drilled down by category and state. Claude explains the drivers. | Same fact-check; the cause is labelled a hypothesis. On the sample data it finds the planted Black Friday spike. |
+
+```mermaid
+flowchart LR
+    Q[Question] --> R[pgvector retrieval<br/>schema, metrics, examples]
+    R --> L1[Claude: write SQL]
+    L1 --> G{sqlglot guard}
+    G -- rejected --> L1
+    G --> X[(run as ai_readonly)]
+    X -- error --> L1
+    X --> L2[Claude: explain rows]
+    L2 --> F{numbers match rows?}
+    F --> A[Answer + SQL + chart]
+```
+
+**LLMOps:** every call logs tokens, latency and cost to `ai.llm_calls` (see the *LLM usage* tab).
+`make evals` scores text-to-SQL by **execution accuracy** on 16 gold questions (`evals/text_to_sql.yml`) and
+measures how often summaries pass the fact-check first time. The test suite runs the whole AI pipeline with a
+fake model, so CI needs no API key.
+
+**Run it:** `export ANTHROPIC_API_KEY=...`, then `make app` (Streamlit on :8501) or `make api` (FastAPI on :8000,
+docs at `/docs`), or `docker compose up` for everything.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /ask` | Question → SQL, rows, answer, fact-check |
+| `POST /insights/generate`, `GET /insights/latest` | Executive summary |
+| `GET /anomalies`, `POST /anomalies/{day}/explain` | Anomalies |
+| `GET /llm/usage` | Tokens, latency and cost per feature |
+
 ## Roadmap
 
 - [x] **1. Data foundation:** Docker, ingestion, dbt staging + star schema, tests, CI
-- [ ] **2. SQL KPIs + Power BI:** growth, moving averages, Pareto, RFM segments, cohort retention, 4-page dashboard
-- [ ] **3. GenAI layer:** fact-checked executive summaries, text-to-SQL with RAG over pgvector, anomaly explainer, review themes
-- [ ] **4. Production polish:** LLM evals in CI, cost/latency logging, scheduled refresh, deployment, demo video
+- [x] **2. SQL KPIs + Power BI:** growth, moving averages, Pareto, RFM segments, cohort retention, Power BI kit (`powerbi/`)
+- [x] **3. GenAI layer:** fact-checked executive summaries, text-to-SQL with RAG over pgvector, anomaly explainer
+- [ ] **3b. Review themes:** classify review text into themes and link them to revenue
+- [ ] **4. Production polish:** scheduled refresh, deployment, Power BI screenshots, demo video
 
 ## Project layout
 
 ```
 src/ecom/        ingestion, Kaggle download, synthetic data generator
+src/ecom/ai/     LLM client, facts, fact-check, text-to-SQL, retrieval, anomalies, API, evals
+app/             Streamlit app
+evals/           gold questions for text-to-SQL
 dbt/models/      staging/ and marts/ SQL models with tests
 dbt/seeds/       category margin assumptions
 db/init/         Postgres init: pgvector extension, read-only AI role

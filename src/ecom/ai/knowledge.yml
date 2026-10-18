@@ -1,0 +1,92 @@
+# Retrieval knowledge for text-to-SQL. Each entry is embedded into ai.knowledge (pgvector).
+# The model sees the top matches for a question, not the whole file.
+tables:
+  - id: marts.fct_orders
+    content: >
+      marts.fct_orders: one row per order. Columns: order_id, customer_id, customer_unique_id (the real person),
+      date_key, purchased_at (timestamp), order_status (delivered, shipped, canceled, unavailable, invoiced,
+      processing), item_count, revenue (items price, excludes freight), freight, est_gross_profit, amount_paid,
+      main_payment_type (credit_card, boleto, voucher, debit_card), max_installments, estimated_delivery_date,
+      delivered_at, delivery_days, is_late (boolean), review_score (1-5), review_comment (Portuguese text).
+  - id: marts.fct_order_items
+    content: >
+      marts.fct_order_items: one row per item sold. Columns: order_id, order_item_id, customer_id, product_id,
+      seller_id, date_key, purchased_at, order_status, revenue (item price), freight_value, est_gross_profit,
+      is_freight_outlier. Join dim_product on product_id for category, dim_seller on seller_id.
+  - id: marts.dim_product
+    content: >
+      marts.dim_product: product_id, category (English, e.g. health_beauty, watches_gifts, bed_bath_table,
+      computers_accessories, furniture_decor, sports_leisure, housewares, electronics, toys, auto, telephony,
+      garden_tools, pet_shop, unknown), category_pt, photos_qty, weight_g, volume_cm3, assumed_margin_pct.
+  - id: marts.dim_customer
+    content: >
+      marts.dim_customer: customer_id, customer_unique_id, city, state (two-letter Brazilian state code, e.g. SP,
+      RJ, MG), zip_prefix, lat, lng.
+  - id: marts.dim_seller
+    content: "marts.dim_seller: seller_id, city, state, zip_prefix, lat, lng."
+  - id: marts.dim_date
+    content: >
+      marts.dim_date: date_day, date_key (YYYYMMDD int), year, quarter, month, month_name, month_start,
+      week_start, day_of_week (1=Mon), day_name, is_weekend.
+  - id: kpi.kpi_monthly_sales
+    content: >
+      kpi.kpi_monthly_sales: one row per month. month, orders, customers, revenue, est_gross_profit,
+      est_margin_pct, avg_order_value, avg_review_score, late_delivery_rate, revenue_mom_growth,
+      revenue_yoy_growth, revenue_3m_moving_avg, revenue_running_total. Excludes canceled/unavailable orders.
+  - id: kpi.kpi_category_pareto
+    content: >
+      kpi.kpi_category_pareto: category, orders, revenue, est_gross_profit, revenue_rank, revenue_share,
+      cumulative_share, is_top_80_pct.
+  - id: kpi.kpi_rfm_segments
+    content: >
+      kpi.kpi_rfm_segments: one row per customer_unique_id. state, last_order_date, recency_days, frequency,
+      monetary, r_score, f_score, m_score (1-5), rfm_code, segment (Champions, Loyal, New / Promising,
+      At Risk (high value), Lost, Needs Attention).
+  - id: kpi.kpi_cohort_retention
+    content: >
+      kpi.kpi_cohort_retention: cohort_month, months_since_first, active_customers, cohort_size, retention_rate.
+  - id: kpi.kpi_delivery_impact
+    content: >
+      kpi.kpi_delivery_impact: one row per customer state. delivered_orders, avg_delivery_days, late_rate,
+      review_on_time, review_late, review_drop_when_late, revenue.
+  - id: kpi.kpi_seller_scorecard
+    content: >
+      kpi.kpi_seller_scorecard: seller_id, state, orders, revenue, avg_review_score, late_rate,
+      revenue_percentile, needs_attention (boolean).
+metrics:
+  - id: metric.revenue
+    content: >
+      Revenue means sum of item price (fct_order_items.revenue or fct_orders.revenue), excluding freight and
+      excluding orders with order_status in ('canceled', 'unavailable').
+  - id: metric.aov
+    content: "Average order value (AOV) = revenue / number of orders, same exclusions as revenue."
+  - id: metric.profit
+    content: >
+      Profit and margin are estimates: est_gross_profit = price x assumed category margin. Always call them
+      estimated.
+  - id: metric.late
+    content: >
+      Late delivery: is_late = delivered date after estimated delivery date. Only meaningful for delivered
+      orders (order_status = 'delivered' and delivered_at is not null).
+  - id: metric.repeat
+    content: >
+      Repeat customers: count customer_unique_id (not customer_id, which is new for every order) with more
+      than one order.
+  - id: metric.dates
+    content: >
+      Data covers 2017-01 to 2018-08. Use date_trunc('month', purchased_at) for monthly grouping. "Last month"
+      means the latest complete month in the data, not the current calendar month.
+examples:
+  - id: example.category_revenue_by_state
+    content: |
+      Question: Which categories had the most revenue in SP?
+      SQL: select p.category, sum(f.revenue) as revenue
+           from marts.fct_order_items f
+           join marts.dim_product p using (product_id)
+           join marts.dim_customer c using (customer_id)
+           where c.state = 'SP' and f.order_status not in ('canceled', 'unavailable')
+           group by 1 order by 2 desc limit 10
+  - id: example.monthly_late_rate
+    content: |
+      Question: How has the late delivery rate changed by month?
+      SQL: select month, late_delivery_rate from kpi.kpi_monthly_sales order by month

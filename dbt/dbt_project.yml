@@ -7,6 +7,10 @@ seed-paths: ["seeds"]
 test-paths: ["tests"]
 macro-paths: ["macros"]
 
+# The AI text-to-SQL service connects as ai_readonly: it may read marts and kpi, nothing else.
+on-run-end:
+  - "{{ grant_ai_readonly(['marts', 'kpi']) }}"
+
 models:
   ecommerce:
     staging:

@@ -1,0 +1,48 @@
+# Gold questions for text-to-SQL. A prediction is correct when its result set matches the gold result
+# (same rows, order ignored unless ordered: true; numbers compared after rounding to 2 decimals;
+# column names ignored). Run: python -m ecom.ai.evals
+- question: What was total revenue across all time?
+  sql: select sum(revenue) from marts.fct_orders where order_status not in ('canceled', 'unavailable')
+- question: How many orders were delivered late?
+  sql: select count(*) from marts.fct_orders where is_late
+- question: Which 5 categories brought in the most revenue?
+  ordered: true
+  sql: select category from kpi.kpi_category_pareto order by revenue desc limit 5
+- question: What is the average order value by payment type?
+  sql: >
+    select main_payment_type, round(avg(revenue), 2) from marts.fct_orders
+    where order_status not in ('canceled', 'unavailable') group by 1
+- question: Which state has the highest late delivery rate?
+  sql: select state from kpi.kpi_delivery_impact order by late_rate desc limit 1
+- question: How many customers are in each RFM segment?
+  sql: select segment, count(*) from kpi.kpi_rfm_segments group by 1
+- question: What was the month-over-month revenue growth in 2018-05?
+  sql: select revenue_mom_growth from kpi.kpi_monthly_sales where month = '2018-05-01'
+- question: What is the average review score for late versus on-time orders?
+  sql: >
+    select is_late, round(avg(review_score), 2) from marts.fct_orders
+    where order_status = 'delivered' and is_late is not null group by 1
+- question: How many unique customers placed more than one order?
+  sql: >
+    select count(*) from (select customer_unique_id from marts.fct_orders
+    where order_status not in ('canceled', 'unavailable') group by 1 having count(*) > 1) t
+- question: Which month had the highest revenue?
+  sql: select month from kpi.kpi_monthly_sales order by revenue desc limit 1
+- question: What share of revenue comes from the top category?
+  sql: select revenue_share from kpi.kpi_category_pareto order by revenue_rank limit 1
+- question: How many sellers are flagged as needing attention?
+  sql: select count(*) from kpi.kpi_seller_scorecard where needs_attention
+- question: What was revenue on weekends compared with weekdays?
+  sql: >
+    select d.is_weekend, sum(f.revenue) from marts.fct_order_items f join marts.dim_date d using (date_key)
+    where f.order_status not in ('canceled', 'unavailable') group by 1
+- question: What is the estimated gross margin for electronics?
+  sql: >
+    select round(sum(est_gross_profit) / sum(revenue), 4) from kpi.kpi_category_pareto where category = 'electronics'
+- question: What is the one-month retention rate of the 2017-01 cohort?
+  sql: >
+    select retention_rate from kpi.kpi_cohort_retention
+    where cohort_month = '2017-01-01' and months_since_first = 1
+- question: Which 3 states have the most delivered orders?
+  ordered: true
+  sql: select state from kpi.kpi_delivery_impact order by delivered_orders desc limit 3
