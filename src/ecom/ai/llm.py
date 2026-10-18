@@ -1,8 +1,11 @@
-"""Thin wrapper around the Claude API used by every AI feature.
+"""Model clients used by every AI feature: Claude (Anthropic) or Gemini (Google).
 
 - Structured output: responses are constrained to a JSON schema and validated with Pydantic.
 - Refusal handling: server-side fallback is enabled, and a final refusal raises LLMRefusal.
 - LLMOps: every call is logged to ai.llm_calls with tokens, latency and cost.
+
+Provider choice: LLM_PROVIDER=claude|gemini, or automatic from whichever key is set
+(ANTHROPIC_API_KEY first, then GEMINI_API_KEY). Gemini has a free tier.
 
 Tests swap in FakeLLM, so the whole pipeline runs without an API key.
 """
@@ -10,6 +13,8 @@ import json
 import logging
 import os
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from typing import Protocol, TypeVar
 
@@ -21,8 +26,11 @@ from ecom.ai import db
 log = logging.getLogger("llm")
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
-# USD per million tokens (input, output)
-PRICES = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50)}
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# USD per million tokens (input, output) at paid list prices. Gemini's free tier is billed at $0;
+# the logged cost then shows what the same traffic would cost on a paid plan.
+PRICES = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0), "claude-haiku-5-5": (0.10, 0.50),
+          "gemini-2.5-flash": (0.30, 2.50), "gemini-2.5-pro": (1.25, 10.0)}
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -52,6 +60,21 @@ def _strict_schema(schema: type[BaseModel]) -> dict:
                 close(v)
     close(s)
     return s
+
+
+def _inline_refs(schema: dict) -> dict:
+    """Replace $ref/$defs with the referenced definitions (some providers do not resolve $ref)."""
+    defs = schema.get("$defs", {})
+
+    def resolve(node):
+        if isinstance(node, dict):
+            if "$ref" in node:
+                return resolve(defs[node["$ref"].split("/")[-1]])
+            return {k: resolve(v) for k, v in node.items() if k != "$defs"}
+        if isinstance(node, list):
+            return [resolve(v) for v in node]
+        return node
+    return resolve(schema)
 
 
 def log_call(purpose: str, model: str, usage, latency_ms: int, stop_reason: str | None) -> None:
@@ -96,6 +119,53 @@ class ClaudeLLM:
         return schema.model_validate_json(text)
 
 
+class _Usage:
+    def __init__(self, input_tokens: int, output_tokens: int):
+        self.input_tokens, self.output_tokens = input_tokens, output_tokens
+
+
+class GeminiLLM:
+    """Gemini via its REST API (no extra dependency). Structured output via responseJsonSchema."""
+
+    URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+    def __init__(self, model: str = GEMINI_MODEL, api_key: str | None = None, opener=urllib.request.urlopen):
+        self.model = model
+        self.api_key = api_key or os.environ["GEMINI_API_KEY"]
+        self.opener = opener
+
+    def structured(self, purpose: str, system: str, user: str, schema: type[T], effort: str = "medium") -> T:
+        body = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseJsonSchema": _inline_refs(_strict_schema(schema)),
+            },
+        }
+        request = urllib.request.Request(
+            self.URL.format(model=self.model), data=json.dumps(body).encode(), method="POST",
+            headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key},
+        )
+        start = time.perf_counter()
+        try:
+            with self.opener(request, timeout=120) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"{purpose}: Gemini API error {e.code}: {e.read()[:300]!r}") from e
+        meta = data.get("usageMetadata", {})
+        candidate = (data.get("candidates") or [{}])[0]
+        finish = candidate.get("finishReason")
+        log_call(purpose, self.model, _Usage(meta.get("promptTokenCount", 0), meta.get("candidatesTokenCount", 0)),
+                 int((time.perf_counter() - start) * 1000), finish)
+        if finish in ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST") or ("promptFeedback" in data and not candidate):
+            raise LLMRefusal(f"{purpose}: model declined the request ({finish})")
+        if finish == "MAX_TOKENS":
+            raise RuntimeError(f"{purpose}: response was cut off at max tokens")
+        text = "".join(p.get("text", "") for p in candidate.get("content", {}).get("parts", []))
+        return schema.model_validate_json(text)
+
+
 class FakeLLM:
     """Deterministic stand-in for tests and offline demos. `responder(purpose, user)` returns a dict."""
 
@@ -110,5 +180,22 @@ class FakeLLM:
         return schema.model_validate(json.loads(json.dumps(self.responder(purpose, user))))
 
 
+def provider() -> str | None:
+    """Which provider will be used: LLM_PROVIDER if set, else the first key found."""
+    chosen = os.getenv("LLM_PROVIDER", "").lower()
+    if chosen in ("claude", "gemini"):
+        return chosen
+    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"):
+        return "claude"
+    if os.getenv("GEMINI_API_KEY"):
+        return "gemini"
+    return None
+
+
 def default_llm() -> LLM:
-    return ClaudeLLM()
+    p = provider()
+    if p == "claude":
+        return ClaudeLLM()
+    if p == "gemini":
+        return GeminiLLM()
+    raise RuntimeError("No model key found. Set GEMINI_API_KEY (free at aistudio.google.com) or ANTHROPIC_API_KEY.")

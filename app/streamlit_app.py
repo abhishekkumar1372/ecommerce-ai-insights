@@ -1,18 +1,19 @@
 """AI Insights app.  Run:  streamlit run app/streamlit_app.py"""
-import os
-
 import pandas as pd
 import streamlit as st
 
 from ecom.ai import anomalies, db, insights, text_to_sql
+from ecom.ai.llm import provider
 
 st.set_page_config(page_title="E-commerce AI Insights", layout="wide")
 st.title("E-commerce AI Insights")
 st.caption("Every number the AI writes is checked against the database. Hover the SQL to see where it came from.")
 
-has_key = bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"))
-if not has_key:
-    st.warning("Set ANTHROPIC_API_KEY to generate new insights. Saved insights still show below.")
+has_key = provider() is not None
+if has_key:
+    st.caption(f"Model provider: {provider()}")
+else:
+    st.warning("Set GEMINI_API_KEY (free) or ANTHROPIC_API_KEY to generate new insights. Saved insights still show below.")
 
 summary_tab, ask_tab, anomaly_tab, ops_tab = st.tabs(["Executive summary", "Ask your data", "Anomalies", "LLM usage"])
 
