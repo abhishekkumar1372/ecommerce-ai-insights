@@ -1,0 +1,21 @@
+name: ecommerce
+version: "1.0.0"
+profile: ecommerce
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+models:
+  ecommerce:
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table
+
+seeds:
+  ecommerce:
+    +schema: reference

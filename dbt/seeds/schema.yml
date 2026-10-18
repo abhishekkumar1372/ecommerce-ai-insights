@@ -1,0 +1,12 @@
+version: 2
+seeds:
+  - name: category_margins
+    description: >
+      ASSUMED gross margin per product category. Olist has no cost data, so profit
+      is estimated as price x margin. Edit these values to run scenarios; `_default`
+      applies to any category not listed.
+    columns:
+      - name: category
+        tests: [unique, not_null]
+      - name: gross_margin_pct
+        tests: [not_null]

@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+data/raw/*
+!data/raw/.gitkeep
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+logs/
+.pytest_cache/
+dbt/.user.yml
