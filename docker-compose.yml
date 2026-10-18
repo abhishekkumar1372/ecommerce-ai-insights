@@ -26,5 +26,26 @@ services:
     volumes:
       - ./data:/app/data
 
+  api:
+    build: .
+    command: uvicorn ecom.ai.api:app --host 0.0.0.0 --port 8000
+    depends_on:
+      pipeline: {condition: service_completed_successfully}
+    environment: &ai_env
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports: ["8000:8000"]
+
+  app:
+    build: .
+    command: streamlit run app/streamlit_app.py --server.address 0.0.0.0
+    depends_on:
+      pipeline: {condition: service_completed_successfully}
+    environment: *ai_env
+    ports: ["8501:8501"]
+
 volumes:
   pgdata:
