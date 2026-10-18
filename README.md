@@ -17,7 +17,7 @@ flowchart LR
     B -->|dbt staging<br/>type, clean, dedupe| C[(staging views)]
     C -->|dbt marts| D[(star schema<br/>facts + dims)]
     D --> E[Power BI]
-    D --> F[AI service<br/>Claude + pgvector]
+    D --> F[AI service<br/>Gemini or Claude + pgvector]
     F --> G[Insights, Q&A,<br/>anomaly explanations]
 ```
 
