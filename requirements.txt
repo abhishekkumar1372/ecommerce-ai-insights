@@ -11,4 +11,4 @@ sqlglot>=30
 pyyaml>=6
 fastapi>=0.115
 uvicorn>=0.30
-streamlit>=1.40
+streamlit>=1.46
